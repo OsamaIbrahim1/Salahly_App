@@ -6,13 +6,14 @@ import { JwtService } from "@nestjs/jwt";
 import { MulterModule } from "@nestjs/platform-express";
 
 @Module({
-    imports: [models,
+    imports: [
+        models,
         MulterModule.register({
             dest: './uploads',
         })
     ],
     controllers: [UserController],
-    providers: [UserServices, JwtService,],
+    providers: [UserServices, JwtService],
     exports: [],
 })
 export class UserModule { }

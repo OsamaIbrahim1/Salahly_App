@@ -3,3 +3,8 @@ export enum Role {
     USER = 'user',
     TECHNICAL = 'technical',
 }
+
+export enum StatusPendingRequest {
+    ACCEPT = 'accept',
+    REJECT = 'reject',
+}

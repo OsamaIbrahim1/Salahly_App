@@ -9,3 +9,11 @@ export const phoneRegex = new RegExp(
 export const passwordRegex = new RegExp(
     /^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&*])(?=.*[a-zA-Z]).{8,}$/
 );
+
+export const arabicNameRegex = new RegExp(
+    /^(?=.{10,})[\u0600-\u06FF]+(?: [\u0600-\u06FF]+)*(?: [\u0600-\u06FF]+)?$/
+);
+
+export const englishNameRegex = new RegExp(
+    /^(?=.{10,})[A-Z][a-zA-Z'’\-]* (?:[a-zA-Z'’\-]* )*[a-zA-Z'’\-]*$/
+);

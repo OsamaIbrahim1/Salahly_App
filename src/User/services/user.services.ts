@@ -1,22 +1,23 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, InternalServerErrorException } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { JwtService } from '@nestjs/jwt'
 import { Model } from "mongoose";
 import * as bcrypt from 'bcrypt'
 import { Request } from "express";
 import { v2 as cloudinary } from "cloudinary";
-import { CodeForgetPassword, User } from "../../DB/Schemas";
+import { CodeForgetPassword, User, Pending } from "../../DB/Schemas";
 import * as env from '../../config'
 import UniqueString from '../../utils/generate-Unique-String'
 import { SendEmailService } from "../../common/services";
-import { updatePasswordBodyDTO } from "../../DTO";
-import { HeadersDto } from "src/utils";
+import { convertToTechnicalBodyDTO, forgetPasswordDto, resetPasswordBodyDTO, resetPasswordTokenDto, updatePasswordBodyDTO } from "../../DTO";
+import { Role, StatusPendingRequest } from "../../utils";
 
 @Injectable()
 export class UserServices {
     constructor(
         @InjectModel(User.name) private User: Model<User>,
         @InjectModel(CodeForgetPassword.name) private CodeForgetPassword: Model<CodeForgetPassword>,
+        @InjectModel(Pending.name) private Pending: Model<Pending>,
         private jwtService: JwtService,
         private sendEmailService: SendEmailService
 
@@ -28,6 +29,7 @@ export class UserServices {
         });
     }
 
+    //=============================== update Profile ===============================//
     /**
      * @param req { _id, oldPublicId, phoneNumber }
      * * check user
@@ -82,6 +84,7 @@ export class UserServices {
         return user
     }
 
+    //=============================== delete Profile ===============================//
     /**
      * @param req { _id }
      * * check user and delete user
@@ -107,6 +110,7 @@ export class UserServices {
         return user
     }
 
+    //=============================== upload Image ===============================//
     /**
      * @param req { _id }
      * @param filePath 
@@ -148,6 +152,7 @@ export class UserServices {
         return user
     }
 
+    //=============================== get user data ===============================//
     /**
      * @param req { _id }
      * * check user
@@ -165,6 +170,7 @@ export class UserServices {
         return user
     }
 
+    //=============================== update password ===============================//
     /**
      * @param req{ _id, oldPassword, newPassword } 
      * * check user
@@ -208,7 +214,7 @@ export class UserServices {
         return user
     }
 
-
+    //=============================== forget password ===============================//
     /**
      * * destructure data from body
      * * check if email is exist
@@ -218,9 +224,9 @@ export class UserServices {
      * * send email
      * * save code to reset password
      */
-    async forgetPasswordService(req: Request) {
+    async forgetPasswordService(req: Request, body: forgetPasswordDto) {
         // * destructure data from body
-        const { email } = req.body
+        const { email } = body
 
         // * check if email is exist
         const user = await this.User.findOne({ email })
@@ -259,6 +265,7 @@ export class UserServices {
         return
     }
 
+    //=============================== reset password ===============================//
     /**
      * * destructure data from params and body
      * * decode token
@@ -267,10 +274,10 @@ export class UserServices {
      * * hash new password
      * * update password and save changes
      */
-    async resetPasswordService(req: Request) {
+    async resetPasswordService(param: resetPasswordTokenDto, body: resetPasswordBodyDTO) {
         // * destructure data from params and body
-        const { token } = req.params
-        const { password } = req.body
+        const { token } = param
+        const { password } = body
 
         // * decode token
         const decoded = this.jwtService.verify(token, { secret: env.RESET_TOKEN })
@@ -302,6 +309,143 @@ export class UserServices {
             throw new BadRequestException('User not found and not updated the password')
         }
 
+        return user
+    }
+
+
+    //======================= convert user account to technical account =======================//
+    /**
+     * * destructure data from body
+     * * destructuring data from authUser
+     * * check user
+     * * upload national id images
+     * * create object to create pending document
+     * * create object to create pending document
+     */
+    async convertToTechnicalService(req: any, body: convertToTechnicalBodyDTO) {
+        // * destructure data from body
+        const { arabicName, englishName, birthDate, hisSkill } = body
+        // * destructuring data from authUser
+        const { _id } = req.authUser
+
+        // * check user
+        const user = await this.User.findOne({ _id, role: Role.USER })
+        if (!user) {
+            throw new BadRequestException('User not found')
+        }
+
+        if (!user.folderId || !user.Image.public_id || !user.Image.secure_url) {
+            throw new BadRequestException('enter your personal picture')
+        }
+
+        // * upload national id images
+        const folderIdNationalId = UniqueString.generateUniqueString(5);
+        let ImageNationalId = [];
+        const folder = user.Image.public_id.split(`${user.folderId}/`)[0];
+
+        if (req.files.frontImageNationalId[0].path) {
+            const { secure_url, public_id } =
+                await cloudinary.uploader.upload(req.files.frontImageNationalId[0].path, {
+                    folder: folder + `${user.folderId}/ImageNationalId/${folderIdNationalId}`,
+                });
+            ImageNationalId.push({ secure_url, public_id });
+        } else {
+            throw new BadRequestException('enter front Image NationalId')
+        }
+
+        if (req.files.backImageNationalId[0].path) {
+            const { secure_url, public_id } =
+                await cloudinary.uploader.upload(req.files.backImageNationalId[0].path, {
+                    folder: folder + `${user.folderId}/ImageNationalId/${folderIdNationalId}`,
+                });
+            ImageNationalId.push({ secure_url, public_id });
+        } else {
+            throw new BadRequestException('enter back Image NationalId')
+        }
+
+        // * create object to create pending document
+        const objPending = {
+            arabicName,
+            englishName,
+            birthDate,
+            hisSkill,
+            email: user.email,
+            phoneNumber: user.phoneNumber,
+            userId: _id,
+            folderId: user.folderId,
+            Image: user.Image,
+            folderIdNationalId,
+            ImageNationalId
+        }
+
+        // * create pending document
+        const pending = await this.Pending.create(objPending)
+        if (!pending) {
+            throw new BadRequestException('Request not send')
+        }
+
+        return pending
+    }
+
+    //=============================== accept OR Reject =====================================//
+    /**
+     * * destructure data from params and query
+     * * find and delete request pending
+     * * check user
+     * * if the status of request is accept
+     * * send mail to user to inform him about accept his request
+     * * send mail to user to inform him about reject his request
+     * @returns { user }
+     */
+    async acceptORRejectService(params: any, query: any): Promise<User> {
+        // * destructure data from params and query
+        const { status } = query
+        const { requestId } = params
+
+        // * find and delete request pending
+        const request = await this.Pending.findByIdAndDelete(requestId)
+        if (!request) {
+            throw new BadRequestException('Request not found')
+        }
+
+        // * check user
+        const user = await this.User.findById(request.userId)
+        if (!user) {
+            throw new BadRequestException('User not found')
+        }
+
+        // * if the status of request is accept
+        if (status === StatusPendingRequest.ACCEPT) {
+            user.arabicName = request.arabicName
+            user.englishName = request.englishName
+            user.birthDate = request.birthDate
+            user.hisSkill = request.hisSkill
+            user.role = Role.TECHNICAL
+            user.folderIdNationalId = request.folderIdNationalId
+            user.ImageNationalId = request.ImageNationalId
+            await user.save()
+
+            // * send mail to user to inform him about accept his request
+            const isEmailSent = await this.sendEmailService.sendEmail(user.email,
+                'welcome to our app',
+                `<h1>We are som happy to inform you that your requet to convert to a technical position has been acceoted</h1>
+                `)
+            if (!isEmailSent) {
+                throw new InternalServerErrorException(`Email is not sent ${user.email}.`)
+            }
+        }
+
+        // * send mail to user to inform him about reject his request
+        if (StatusPendingRequest.REJECT) {
+            const isEmailSent = await this.sendEmailService.sendEmail(user.email,
+                'welcome to our app',
+                `<h1>we are sorry that your application for convert to technical position was not accepted</h1>ّ
+                <h3>we wish you the best of luck in the near future</h3>
+                `)
+            if (!isEmailSent) {
+                throw new InternalServerErrorException(`Email is not sent ${user.email}.`)
+            }
+        }
         return user
     }
 }

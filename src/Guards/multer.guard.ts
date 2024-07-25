@@ -16,9 +16,9 @@ export const multerImages = {
         }
         cb(new Error("file format is not allowed!"), false);
     },
-    limits: {
-        fileSize: 1024 * 1024 * 1
-    }
+    // limits: {
+    //     fileSize: 1024 * 1024 * 1
+    // }
 }
 
 export const multerVideos = {

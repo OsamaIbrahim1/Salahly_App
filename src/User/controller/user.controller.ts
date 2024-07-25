@@ -1,13 +1,13 @@
-import { Body, Controller, Delete, Get, Headers, Patch, Post, Put, Req, Res, UploadedFile, UseGuards, UseInterceptors, UsePipes, ValidationPipe } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors, UsePipes } from "@nestjs/common";
 import { AuthGuard, RolesGuard, } from "../../Guards";
 import { Request, Response, Express } from "express";
 import { UserServices } from "../services";
-import { HeadersDto, Role, Roles } from "../../utils";
-import { FileInterceptor } from "@nestjs/platform-express";
+import { Role, Roles } from "../../utils";
+import { FileFieldsInterceptor, FileInterceptor } from "@nestjs/platform-express";
 import { multerImages } from "../../Guards/multer.guard";
 import { updatePasswordSchema } from "../validation";
-import { HeadersValidation, ZodValidationPipe } from "../../pipes";
-import { updatePasswordBodyDTO } from "../../DTO";
+import { ZodValidationPipe } from "../../pipes";
+import { acceptORRejectParamsDTO, acceptORRejectQueryDTO, convertToTechnicalBodyDTO, forgetPasswordDto, resetPasswordBodyDTO, resetPasswordTokenDto, updatePasswordBodyDTO } from "../../DTO";
 
 @Controller('user')
 export class UserController {
@@ -20,7 +20,7 @@ export class UserController {
     @Get('profile')
     @UseGuards(RolesGuard)
     @UseGuards(AuthGuard)
-    @Roles(Role.USER, Role.TECHNICAL, Role.ADMIN)
+    @Roles(Role.USER, Role.TECHNICAL)
     async userProfileController(
         @Req() req: Request,
         @Res() res: Response
@@ -33,9 +33,8 @@ export class UserController {
     @Post('updateProfile')
     @UseGuards(RolesGuard)
     @UseGuards(AuthGuard)
-    @Roles(Role.USER, Role.TECHNICAL, Role.ADMIN)
+    @Roles(Role.USER)
     @UseInterceptors(FileInterceptor('image', multerImages))
-    // @UsePipes(new ZodValidationPipe())
     async updateProfileController(
         @Req() req: Request,
         @Res() res: Response,
@@ -48,7 +47,7 @@ export class UserController {
     @Post('upload')
     @UseGuards(RolesGuard)
     @UseGuards(AuthGuard)
-    @Roles(Role.USER, Role.TECHNICAL, Role.ADMIN)
+    @Roles(Role.USER, Role.TECHNICAL)
     @UseInterceptors(FileInterceptor('image', multerImages))
     async uploadFile(
         @Req() req: Request,
@@ -63,7 +62,7 @@ export class UserController {
     @Delete('deletProfile')
     @UseGuards(RolesGuard)
     @UseGuards(AuthGuard)
-    @Roles(Role.USER, Role.TECHNICAL, Role.ADMIN)
+    @Roles(Role.USER, Role.TECHNICAL)
     async deleteProfileController(
         @Req() req: Request,
         @Res() res: Response
@@ -76,15 +75,13 @@ export class UserController {
     @Patch('updatePassword')
     @UseGuards(RolesGuard)
     @UseGuards(AuthGuard)
-    @Roles(Role.USER, Role.TECHNICAL, Role.ADMIN)
+    @Roles(Role.USER, Role.TECHNICAL)
     @UsePipes(new ZodValidationPipe(updatePasswordSchema))
     async updatePasswordController(
-        @HeadersValidation() headers: HeadersDto,
         @Req() req: Request,
         @Body() body: updatePasswordBodyDTO,
         @Res() res: Response
     ) {
-        console.log("req:", headers)
         const response = await this.userServices.updatePasswordService(req, body)
 
         res.status(200).json({ message: 'update password successfully', data: response })
@@ -92,22 +89,53 @@ export class UserController {
 
     @Post('forgetPassword')
     async forgetPasswordController(
+        @Body() body: forgetPasswordDto,
         @Req() req: Request,
         @Res() res: Response,
     ) {
-        const response = await this.userServices.forgetPasswordService(req)
+        const response = await this.userServices.forgetPasswordService(req, body)
 
         res.status(200).json({ message: 'sent code in your email', data: response })
     }
 
     @Post('resetPassword/:token')
     async resetPasswordController(
-        @Req() req: Request,
+        @Param() param: resetPasswordTokenDto,
+        @Body() body: resetPasswordBodyDTO,
         @Res() res: Response,
     ) {
 
-        const response = await this.userServices.resetPasswordService(req)
+        const response = await this.userServices.resetPasswordService(param, body)
 
-        res.status(200).json({ message: 'sent code in your email', data: response })
+        res.status(200).json({ message: 'reset password successfully', data: response })
+    }
+
+    @Post('convertToTechnical')
+    @UseGuards(RolesGuard)
+    @UseGuards(AuthGuard)
+    @Roles(Role.USER)
+    @UseInterceptors(FileFieldsInterceptor([{ name: 'frontImageNationalId', maxCount: 1 }, { name: 'backImageNationalId', maxCount: 1 }], multerImages))
+    async convertToTechnicalController(
+        @Body() body: convertToTechnicalBodyDTO,
+        @Req() req: Request,
+        @Res() res: Response,
+    ) {
+        const response = await this.userServices.convertToTechnicalService(req, body)
+
+        res.status(200).json({ message: 'Your request will be discussed', data: response })
+    }
+
+    @Post('acceptORReject/:requestId')
+    @UseGuards(RolesGuard)
+    @UseGuards(AuthGuard)
+    @Roles(Role.ADMIN)
+    async acceptORRejectController(
+        @Param() params: acceptORRejectParamsDTO,
+        @Query() query: acceptORRejectQueryDTO,
+        @Res() res: Response
+    ) {
+        const response = await this.userServices.acceptORRejectService(params, query)
+
+        res.status(200).json({ message: 'response successfully.', data: response })
     }
 }
